@@ -791,6 +791,45 @@ app.post('/api/contacts/delete', async (req, res) => {
     }
 });
 
+// ============================================================
+// LABEL METADATA - Persist label names/colors per business
+// ============================================================
+const LABELS_DIR = path.join(__dirname, '.labels_data');
+fs.ensureDirSync(LABELS_DIR);
+
+function getLabelsFilePath(businessId) {
+    return path.join(LABELS_DIR, `${businessId}.json`);
+}
+
+// Save label metadata for a business
+app.post('/api/labels/save', async (req, res) => {
+    const { businessId, labels } = req.body;
+    if (!businessId || !labels) return res.status(400).json({ error: 'businessId and labels required' });
+    try {
+        await fs.writeJson(getLabelsFilePath(businessId), labels);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Load label metadata for a business
+app.post('/api/labels/load', async (req, res) => {
+    const { businessId } = req.body;
+    if (!businessId) return res.status(400).json({ error: 'businessId required' });
+    try {
+        const filePath = getLabelsFilePath(businessId);
+        if (await fs.pathExists(filePath)) {
+            const labels = await fs.readJson(filePath);
+            res.json({ labels });
+        } else {
+            res.json({ labels: [] });
+        }
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 app.get('/health', (req, res) => {
     res.json({ status: 'ok', connected: isConnected });
 });

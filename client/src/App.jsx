@@ -1,9 +1,10 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+﻿import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { io } from 'socket.io-client';
 import { motion, AnimatePresence } from 'framer-motion';
 import * as XLSX from 'xlsx';
 
-const socket = io('http://localhost:8790');
+const API_URL = import.meta.env.VITE_API_URL || '';
+const socket = io(API_URL || undefined);
 
 // Default label colors
 const LABEL_COLORS = [
@@ -87,6 +88,19 @@ function App() {
   useEffect(() => { localStorage.setItem('wa_crm_labels', JSON.stringify(labels)); }, [labels]);
   useEffect(() => { localStorage.setItem('wa_msg', rawMessage); }, [rawMessage]);
 
+  // Sync labels to server whenever they change (debounced)
+  const labelsSyncRef = useRef(null);
+  useEffect(() => {
+    if (!activeBusiness || labels.length === 0) return;
+    if (labelsSyncRef.current) clearTimeout(labelsSyncRef.current);
+    labelsSyncRef.current = setTimeout(() => {
+      fetch('/api/labels/save', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ businessId: activeBusiness, labels })
+      }).catch(err => console.error('Label sync error:', err));
+    }, 1000);
+  }, [labels, activeBusiness]);
+
   // Persist auth
   useEffect(() => { if (authUser) localStorage.setItem('wa_auth_user', JSON.stringify(authUser)); else localStorage.removeItem('wa_auth_user'); }, [authUser]);
   useEffect(() => { if (authToken) localStorage.setItem('wa_auth_token', authToken); else localStorage.removeItem('wa_auth_token'); }, [authToken]);
@@ -98,7 +112,20 @@ function App() {
     if (!bizId) return;
     setContactsLoading(true);
     try {
-      const res = await fetch('http://localhost:8790/api/contacts/load', {
+      // First, load saved label metadata from server
+      let serverLabels = [];
+      try {
+        const labelRes = await fetch('/api/labels/load', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ businessId: bizId })
+        });
+        const labelData = await labelRes.json();
+        if (labelData.labels && labelData.labels.length > 0) {
+          serverLabels = labelData.labels;
+        }
+      } catch (err) { console.error('Load labels error:', err); }
+
+      const res = await fetch('/api/contacts/load', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ businessId: bizId, token: authToken })
       });
@@ -108,11 +135,14 @@ function App() {
         // Extract unique labels from contacts
         const dbLabels = [...new Set(data.contacts.map(c => c.label).filter(Boolean))];
         setLabels(prev => {
-          const existingIds = prev.map(l => l.id);
+          // Start with server-saved labels as the source of truth (has correct names)
+          const baseLabels = serverLabels.length > 0 ? serverLabels : prev;
+          const existingIds = baseLabels.map(l => l.id);
+          // Only auto-create labels for IDs found in contacts that don't exist in saved metadata
           const newLabels = dbLabels.filter(l => !existingIds.includes(l) && l !== 'new_lead').map((l, i) => ({
             id: l, name: l.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()), color: LABEL_COLORS[i % LABEL_COLORS.length]
           }));
-          return [...prev, ...newLabels];
+          return [...baseLabels, ...newLabels];
         });
       }
     } catch (err) { console.error('Load contacts error:', err); }
@@ -125,7 +155,7 @@ function App() {
   // Verify stored session on mount
   useEffect(() => {
     if (!authToken) { setAuthChecking(false); return; }
-    fetch('http://localhost:8790/api/auth/verify', {
+    fetch('/api/auth/verify', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ token: authToken })
     }).then(r => r.json()).then(data => {
@@ -144,7 +174,7 @@ function App() {
     setLoginError('');
     setLoginLoading(true);
     try {
-      const res = await fetch('http://localhost:8790/api/auth/login', {
+      const res = await fetch('/api/auth/login', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: loginEmail, password: loginPassword })
       });
@@ -259,7 +289,7 @@ function App() {
     if (cleaned.length === 0) return 0;
 
     try {
-      const res = await fetch('http://localhost:8790/api/contacts/save', {
+      const res = await fetch('/api/contacts/save', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ businessId: activeBusiness, contacts: cleaned, token: authToken })
       });
@@ -278,7 +308,7 @@ function App() {
   const setContactLabel = async (contactIds, labelId) => {
     if (!activeBusiness) return;
     try {
-      await fetch('http://localhost:8790/api/contacts/update-label', {
+      await fetch('/api/contacts/update-label', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ businessId: activeBusiness, contactIds, label: labelId, token: authToken })
       });
@@ -289,7 +319,7 @@ function App() {
   const deleteContacts = async (contactIds) => {
     if (!activeBusiness) return;
     try {
-      await fetch('http://localhost:8790/api/contacts/delete', {
+      await fetch('/api/contacts/delete', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ businessId: activeBusiness, contactIds, token: authToken })
       });
@@ -429,7 +459,7 @@ function App() {
     setFetchingBot(true);
     setBotResults(null);
     try {
-      const res = await fetch('http://localhost:8790/api/bot-contacts', {
+      const res = await fetch('/api/bot-contacts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ businessId: activeBusiness, timeFilter: botTimeFilter })
@@ -544,7 +574,7 @@ function App() {
               <div>
                 <label className="text-[10px] text-slate-500 font-bold uppercase">Password</label>
                 <input type="password" value={loginPassword} onChange={e => setLoginPassword(e.target.value)} required
-                  className="w-full bg-black/30 border border-white/10 rounded-xl p-3 text-sm mt-1 focus:outline-none focus:border-whatsapp-light/50" placeholder="••••••••" />
+                  className="w-full bg-black/30 border border-white/10 rounded-xl p-3 text-sm mt-1 focus:outline-none focus:border-whatsapp-light/50" placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢" />
               </div>
               {loginError && <p className="text-xs text-red-400 bg-red-500/10 p-2 rounded-lg">{loginError}</p>}
               <button type="submit" disabled={loginLoading}
@@ -720,13 +750,13 @@ function App() {
                     {mediaActive && (
                       <div className="p-4 bg-white/5 rounded-xl border border-dashed border-white/20 text-center">
                         <input type="file" className="hidden" id="wa-media" accept="image/*,video/*" onChange={(e) => handleFileChange(e, 'media')} />
-                        <label htmlFor="wa-media" className="cursor-pointer text-xs text-slate-400 hover:text-slate-200">{mediaFile ? `✅ ${mediaFile.name}` : 'Click to select Image or Video'}</label>
+                        <label htmlFor="wa-media" className="cursor-pointer text-xs text-slate-400 hover:text-slate-200">{mediaFile ? `âœ… ${mediaFile.name}` : 'Click to select Image or Video'}</label>
                       </div>
                     )}
                     {docActive && (
                       <div className="p-4 bg-white/5 rounded-xl border border-dashed border-white/20 text-center">
                         <input type="file" className="hidden" id="wa-doc" onChange={(e) => handleFileChange(e, 'doc')} />
-                        <label htmlFor="wa-doc" className="cursor-pointer text-xs text-slate-400 hover:text-slate-200">{docFile ? `✅ ${docFile.name}` : 'Click to select Document/PDF'}</label>
+                        <label htmlFor="wa-doc" className="cursor-pointer text-xs text-slate-400 hover:text-slate-200">{docFile ? `âœ… ${docFile.name}` : 'Click to select Document/PDF'}</label>
                       </div>
                     )}
                   </div>
@@ -789,7 +819,7 @@ function App() {
 
                   {spreadsheetResults && (
                     <div className="bg-black/30 rounded-2xl p-6 border border-white/5 space-y-4">
-                      <p className="text-sm font-bold text-green-400">✅ Found {spreadsheetResults.length} contacts</p>
+                      <p className="text-sm font-bold text-green-400">âœ… Found {spreadsheetResults.length} contacts</p>
                       <div className="max-h-40 overflow-y-auto space-y-1">
                         {spreadsheetResults.slice(0, 20).map((c, i) => (
                           <div key={i} className="flex items-center justify-between text-xs py-1 border-b border-white/5">
@@ -806,8 +836,8 @@ function App() {
                           <select id="spreadsheet-label-select" onChange={(e) => { if (e.target.value === '__new__') { setShowLabelModal(true); e.target.value = ''; } }}
                             className="bg-black/30 border border-white/10 rounded-xl p-2.5 text-sm flex-1">
                             <option value="">No label</option>
-                            {labels.map(l => <option key={l.id} value={l.id}>⬤ {l.name}</option>)}
-                            <option value="__new__">＋ Create new label...</option>
+                            {labels.map(l => <option key={l.id} value={l.id}>â¬¤ {l.name}</option>)}
+                            <option value="__new__">ï¼‹ Create new label...</option>
                           </select>
                           <button onClick={() => { const sel = document.getElementById('spreadsheet-label-select'); importSpreadsheetResults(sel.value || null); }}
                             className="px-6 py-2.5 bg-whatsapp-light/20 text-whatsapp-light border border-whatsapp-light/30 rounded-xl font-bold text-sm whitespace-nowrap">
@@ -849,7 +879,7 @@ function App() {
 
                   {manualResults && (
                     <div className="bg-black/30 rounded-2xl p-6 border border-white/5 space-y-4">
-                      <p className="text-sm font-bold text-green-400">✅ {manualResults.length} valid numbers parsed</p>
+                      <p className="text-sm font-bold text-green-400">âœ… {manualResults.length} valid numbers parsed</p>
                       <div className="max-h-40 overflow-y-auto space-y-1">
                         {manualResults.slice(0, 20).map((c, i) => (
                           <div key={i} className="flex items-center text-xs py-1 border-b border-white/5">
@@ -865,8 +895,8 @@ function App() {
                           <select id="manual-label-select" onChange={(e) => { if (e.target.value === '__new__') { setShowLabelModal(true); e.target.value = ''; } }}
                             className="bg-black/30 border border-white/10 rounded-xl p-2.5 text-sm flex-1">
                             <option value="">No label</option>
-                            {labels.map(l => <option key={l.id} value={l.id}>⬤ {l.name}</option>)}
-                            <option value="__new__">＋ Create new label...</option>
+                            {labels.map(l => <option key={l.id} value={l.id}>â¬¤ {l.name}</option>)}
+                            <option value="__new__">ï¼‹ Create new label...</option>
                           </select>
                           <button onClick={() => { const sel = document.getElementById('manual-label-select'); importManualResults(sel.value || null); }}
                             className="px-6 py-2.5 bg-whatsapp-light/20 text-whatsapp-light border border-whatsapp-light/30 rounded-xl font-bold text-sm whitespace-nowrap">
@@ -959,7 +989,7 @@ function App() {
                         </p>
                         <button onClick={() => socket.emit('captcha_solved')}
                           className="px-4 py-2 bg-amber-500/20 text-amber-300 border border-amber-500/40 rounded-xl text-xs font-bold hover:bg-amber-500/30">
-                          I've Solved It — Continue
+                          I've Solved It â€” Continue
                         </button>
                       </div>
                     </div>
@@ -976,7 +1006,7 @@ function App() {
                         <p className="text-sm font-bold text-whatsapp-light">{scrapeProgress.found} numbers found</p>
                       </div>
                       {scrapeProgress.status === 'google_blocked' && (
-                        <p className="text-xs text-amber-400">⚠️ Google blocked — switching to DuckDuckGo...</p>
+                        <p className="text-xs text-amber-400">âš ï¸ Google blocked â€” switching to DuckDuckGo...</p>
                       )}
                       {/* Progress Bar */}
                       <div className="w-full h-2 bg-white/5 rounded-full overflow-hidden">
@@ -999,7 +1029,7 @@ function App() {
                   {scrapeResults && !scraping && (
                     <div className="bg-black/30 rounded-2xl p-6 border border-white/5 space-y-4">
                       <div className="flex items-center justify-between">
-                        <p className="text-sm font-bold text-green-400">✅ Found {scrapeResults.length} phone numbers</p>
+                        <p className="text-sm font-bold text-green-400">âœ… Found {scrapeResults.length} phone numbers</p>
                         {scrapeProgress.status === 'done' && scrapeProgress.engine && (
                           <span className="text-[10px] text-slate-500">via {scrapeProgress.engine}</span>
                         )}
@@ -1017,8 +1047,8 @@ function App() {
                         <select id="scrape-label-select" onChange={(e) => { if (e.target.value === '__new__') { setShowLabelModal(true); e.target.value = ''; } }}
                           className="bg-black/30 border border-white/10 rounded-xl p-2 text-sm flex-1">
                           <option value="">No label</option>
-                          {labels.map(l => <option key={l.id} value={l.id}>⬤ {l.name}</option>)}
-                          <option value="__new__">＋ Create new label...</option>
+                          {labels.map(l => <option key={l.id} value={l.id}>â¬¤ {l.name}</option>)}
+                          <option value="__new__">ï¼‹ Create new label...</option>
                         </select>
                         <button onClick={() => importScrapeResults(document.getElementById('scrape-label-select').value || null)}
                           className="px-6 py-2 bg-whatsapp-light/20 text-whatsapp-light border border-whatsapp-light/30 rounded-xl font-bold text-sm">
@@ -1066,9 +1096,9 @@ function App() {
                   {botResults && (
                     <div className="bg-black/30 rounded-2xl p-6 border border-white/5 space-y-4">
                       <div className="flex items-center justify-between">
-                        <p className="text-sm font-bold text-green-400">✅ Found {botResults.all.length} contacts</p>
+                        <p className="text-sm font-bold text-green-400">âœ… Found {botResults.all.length} contacts</p>
                         {botResults.duplicates > 0 && (
-                          <p className="text-xs text-amber-400 bg-amber-500/10 px-2 py-1 rounded-lg">⚠️ {botResults.duplicates} already saved (skipped)</p>
+                          <p className="text-xs text-amber-400 bg-amber-500/10 px-2 py-1 rounded-lg">âš ï¸ {botResults.duplicates} already saved (skipped)</p>
                         )}
                       </div>
 
@@ -1094,8 +1124,8 @@ function App() {
                               <select id="bot-label-select" onChange={(e) => { if (e.target.value === '__new__') { setShowLabelModal(true); e.target.value = ''; } }}
                                 className="bg-black/30 border border-white/10 rounded-xl p-2.5 text-sm flex-1">
                                 <option value="">No label</option>
-                                {labels.map(l => <option key={l.id} value={l.id}>⬤ {l.name}</option>)}
-                                <option value="__new__">＋ Create new label...</option>
+                                {labels.map(l => <option key={l.id} value={l.id}>â¬¤ {l.name}</option>)}
+                                <option value="__new__">ï¼‹ Create new label...</option>
                               </select>
                               <button onClick={() => {
                                 const sel = document.getElementById('bot-label-select');
@@ -1148,7 +1178,7 @@ function App() {
                             <span className="text-xs font-bold cursor-pointer" onDoubleClick={() => startEditLabel(l)} title="Double-click to rename">{l.name}</span>
                           )}
                           <span className="text-[10px] text-slate-500">({contacts.filter(c => c.label === l.id).length})</span>
-                          <button onClick={() => { const cnt = contacts.filter(c => c.label === l.id).length; if (window.confirm(`Delete label "${l.name}" and its ${cnt} contact(s)? This cannot be undone.`)) deleteLabel(l.id); }} className="text-red-400/50 hover:text-red-400 text-xs ml-1">×</button>
+                          <button onClick={() => { const cnt = contacts.filter(c => c.label === l.id).length; if (window.confirm(`Delete label "${l.name}" and its ${cnt} contact(s)? This cannot be undone.`)) deleteLabel(l.id); }} className="text-red-400/50 hover:text-red-400 text-xs ml-1">Ã—</button>
                         </div>
                       ))}
                       {labels.length === 0 && <p className="text-xs text-slate-500">No labels yet. Create one to organize contacts.</p>}
@@ -1198,7 +1228,7 @@ function App() {
                                   </select>
                                 </td>
                                 <td className="p-2">
-                                  <button onClick={() => deleteContacts([c.id])} className="text-red-400/60 hover:text-red-400 text-xs">🗑️</button>
+                                  <button onClick={() => deleteContacts([c.id])} className="text-red-400/60 hover:text-red-400 text-xs">ðŸ—‘ï¸</button>
                                 </td>
                               </tr>
                             );
@@ -1237,7 +1267,7 @@ function App() {
                           </button>
                         );
                       })}
-                      {labels.length === 0 && <p className="text-xs text-slate-500">No labels created yet. Go to Contacts → Manage to create labels.</p>}
+                      {labels.length === 0 && <p className="text-xs text-slate-500">No labels created yet. Go to Contacts â†’ Manage to create labels.</p>}
                     </div>
                     <div className="bg-black/30 rounded-xl p-4 border border-white/5">
                       <p className="text-sm"><span className="text-whatsapp-light font-bold">{campaignContacts.length}</span> contacts will receive this campaign</p>
@@ -1304,7 +1334,7 @@ function App() {
                   <h4 className="text-xs font-bold text-slate-500 mb-4 uppercase flex items-center space-x-2"><i className="fas fa-terminal"></i><span>Activity Log</span></h4>
                   <div className="bg-black/50 border border-white/5 rounded-2xl p-6 h-64 overflow-y-auto font-mono text-[11px] space-y-1">
                     {progress.logs.map((log, i) => (
-                      <div key={i} className={`${log.includes('✅') ? 'text-green-400' : log.includes('❌') ? 'text-red-400' : 'text-slate-400'}`}>{log}</div>
+                      <div key={i} className={`${log.includes('âœ…') ? 'text-green-400' : log.includes('âŒ') ? 'text-red-400' : 'text-slate-400'}`}>{log}</div>
                     ))}
                     {progress.logs.length === 0 && <p className="text-slate-600">Waiting for campaign to start...</p>}
                   </div>
