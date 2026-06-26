@@ -507,8 +507,8 @@ async function scrapeWithPuppeteer(socket, params) {
     const query = parts.join(' ');
 
     let execPath = null;
-    // On Linux servers, look for system chromium first
-    const linuxPaths = ['/usr/bin/chromium-browser', '/usr/bin/chromium', '/usr/bin/google-chrome', '/usr/bin/google-chrome-stable'];
+    // On Linux servers, look for real Google Chrome first (most reliable), then chromium
+    const linuxPaths = ['/usr/bin/google-chrome-stable', '/usr/bin/google-chrome', '/usr/bin/chromium-browser', '/usr/bin/chromium'];
     for (const p of linuxPaths) {
         if (fs.existsSync(p)) { execPath = p; break; }
     }
