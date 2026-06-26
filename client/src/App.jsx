@@ -574,7 +574,7 @@ function App() {
               <div>
                 <label className="text-[10px] text-slate-500 font-bold uppercase">Password</label>
                 <input type="password" value={loginPassword} onChange={e => setLoginPassword(e.target.value)} required
-                  className="w-full bg-black/30 border border-white/10 rounded-xl p-3 text-sm mt-1 focus:outline-none focus:border-whatsapp-light/50" placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢" />
+                  className="w-full bg-black/30 border border-white/10 rounded-xl p-3 text-sm mt-1 focus:outline-none focus:border-whatsapp-light/50" placeholder="********" />
               </div>
               {loginError && <p className="text-xs text-red-400 bg-red-500/10 p-2 rounded-lg">{loginError}</p>}
               <button type="submit" disabled={loginLoading}
