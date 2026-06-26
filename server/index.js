@@ -373,7 +373,9 @@ app.post('/api/auth/login', async (req, res) => {
                 name: b.business_name,
                 whatsapp: b.whatsapp_number,
                 plan: b.plan || b.subscription_plan || 'full',
-                crmAccess: b.crm_access || b.plan_type || 'full'
+                crmAccess: b.crm_access || b.plan_type || 'full',
+                billingStatus: b.subscription_status || 'active',
+                nextDue: b.billing_next_due_at || null
             }))
         });
     } catch (err) {
@@ -401,7 +403,9 @@ app.post('/api/auth/verify', async (req, res) => {
                 name: b.business_name,
                 whatsapp: b.whatsapp_number,
                 plan: b.plan || b.subscription_plan || 'full',
-                crmAccess: b.crm_access || b.plan_type || 'full'
+                crmAccess: b.crm_access || b.plan_type || 'full',
+                billingStatus: b.subscription_status || 'active',
+                nextDue: b.billing_next_due_at || null
             }))
         });
     } catch (err) {

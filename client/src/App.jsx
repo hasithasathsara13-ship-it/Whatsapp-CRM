@@ -57,6 +57,10 @@ function App() {
   // Spreadsheet Import State
   const [spreadsheetResults, setSpreadsheetResults] = useState(null);
 
+  // Manual Entry State
+  const [manualNumbers, setManualNumbers] = useState('');
+  const [manualResults, setManualResults] = useState(null);
+
   // Bot Contact State
   const [fetchingBot, setFetchingBot] = useState(false);
   const [botResults, setBotResults] = useState(null);
@@ -207,6 +211,8 @@ function App() {
       if (spreadSel) spreadSel.value = label.id;
       const scrapeSel = document.getElementById('scrape-label-select');
       if (scrapeSel) scrapeSel.value = label.id;
+      const manualSel = document.getElementById('manual-label-select');
+      if (manualSel) manualSel.value = label.id;
     }, 100);
   };
 
@@ -372,6 +378,27 @@ function App() {
     setSpreadsheetResults(null);
   };
 
+  // --- MANUAL ENTRY ---
+  const parseManualNumbers = () => {
+    if (!manualNumbers.trim()) return alert('Please enter phone numbers');
+    const items = manualNumbers.split(/[,\n;]+/).map(s => s.trim()).filter(Boolean);
+    const parsed = items.map(item => {
+      const phone = item.replace(/[^\d+]/g, '').replace(/^\+/, '');
+      return { phone, name: null, source: 'manual' };
+    }).filter(c => c.phone.length >= 9 && c.phone.length <= 15);
+
+    if (parsed.length === 0) return alert('No valid phone numbers found');
+    setManualResults(parsed);
+  };
+
+  const importManualResults = async (labelId) => {
+    if (!manualResults || manualResults.length === 0) return;
+    const added = await addContacts(manualResults, labelId);
+    alert(`Saved ${added} contacts (duplicates skipped).`);
+    setManualResults(null);
+    setManualNumbers('');
+  };
+
   // --- LEAD SCRAPER ---
   const startScraping = () => {
     if (!scrapeForm.keywords.trim()) return alert('Enter keywords to search');
@@ -499,7 +526,7 @@ function App() {
               <i className="fab fa-whatsapp"></i>
             </div>
             <div>
-              <h1 className="text-2xl font-bold">Bulk <span className="text-whatsapp-light">Pro</span></h1>
+              <h1 className="text-2xl font-bold">Velo.ai <span className="text-whatsapp-light">Bulk Pro</span></h1>
               <p className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">CRM Edition</p>
             </div>
           </div>
@@ -526,7 +553,7 @@ function App() {
               </button>
             </form>
           </div>
-          <p className="text-[10px] text-slate-600 text-center mt-6">Powered by VeloAI</p>
+          <p className="text-[10px] text-slate-600 text-center mt-6">Powered by Velo.AI</p>
         </div>
       </div>
     );
@@ -548,6 +575,18 @@ function App() {
       </div>
     );
   }
+
+  // --- SUBSCRIPTION EXPIRED CHECK ---
+  const activeBiz = businesses.find(b => b.id === activeBusiness);
+  const isExpired = (() => {
+    if (!activeBiz) return false;
+    if (activeBiz.billingStatus === 'past_due' || activeBiz.billingStatus === 'expired' || activeBiz.billingStatus === 'suspended') return true;
+    if (activeBiz.nextDue) {
+      const dueDate = new Date(activeBiz.nextDue);
+      if (dueDate < new Date()) return true;
+    }
+    return false;
+  })();
 
   if (loading) {
     return (
@@ -571,7 +610,7 @@ function App() {
             <i className="fab fa-whatsapp"></i>
           </div>
           <div>
-            <h1 className="text-xl font-bold tracking-tight">Bulk <span className="text-whatsapp-light">Pro</span></h1>
+            <h1 className="text-xl font-bold tracking-tight">Velo.ai <span className="text-whatsapp-light">Bulk Pro</span></h1>
             <p className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">CRM Edition v3.0</p>
           </div>
         </div>
@@ -722,6 +761,7 @@ function App() {
               <div className="flex flex-wrap gap-2">
                 {[
                   { id: 'spreadsheet', label: 'Spreadsheet', icon: 'fa-file-excel' },
+                  { id: 'manual', label: 'Manual Entry', icon: 'fa-keyboard' },
                   { id: 'scraper', label: 'Lead Scraper', icon: 'fa-search' },
                   ...(activePlan !== 'crm_only' ? [{ id: 'bot', label: 'Bot Contacts', icon: 'fa-robot' }] : []),
                   { id: 'manage', label: 'Manage', icon: 'fa-tags' },
@@ -778,6 +818,65 @@ function App() {
                           <div className="flex flex-wrap gap-1.5 pt-1">
                             {labels.map(l => (
                               <button key={l.id} onClick={() => { document.getElementById('spreadsheet-label-select').value = l.id; }}
+                                className="flex items-center space-x-1.5 px-2.5 py-1 rounded-full border border-white/10 bg-white/5 hover:bg-white/10 transition-all cursor-pointer">
+                                <span className="w-2.5 h-2.5 rounded-full" style={{ background: l.color }}></span>
+                                <span className="text-[10px] font-bold text-slate-300">{l.name}</span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                        {labels.length === 0 && (
+                          <p className="text-[11px] text-slate-500">No labels yet. Select "Create new label" above to organize your contacts.</p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* MANUAL ENTRY SOURCE */}
+              {contactSource === 'manual' && (
+                <div className="glass p-8 rounded-[2rem] border-white/5 space-y-6">
+                  <h3 className="text-lg font-bold flex items-center space-x-2"><i className="fas fa-keyboard text-cyan-400"></i><span>Manual Entry</span></h3>
+                  <p className="text-sm text-slate-400">Paste phone numbers separated by commas, new lines, or semicolons.</p>
+                  <textarea value={manualNumbers} onChange={e => setManualNumbers(e.target.value)}
+                    className="w-full h-40 bg-black/30 border border-white/10 rounded-2xl p-4 text-sm text-slate-100 font-mono focus:outline-none focus:border-cyan-400/50 resize-none"
+                    placeholder="94771234567, 94772345678, 94773456789&#10;or one per line..." />
+                  <button onClick={parseManualNumbers}
+                    className="px-8 py-3 bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 rounded-xl font-bold text-sm hover:bg-cyan-500/30">
+                    <i className="fas fa-check mr-2"></i>Parse Numbers
+                  </button>
+
+                  {manualResults && (
+                    <div className="bg-black/30 rounded-2xl p-6 border border-white/5 space-y-4">
+                      <p className="text-sm font-bold text-green-400">✅ {manualResults.length} valid numbers parsed</p>
+                      <div className="max-h-40 overflow-y-auto space-y-1">
+                        {manualResults.slice(0, 20).map((c, i) => (
+                          <div key={i} className="flex items-center text-xs py-1 border-b border-white/5">
+                            <span className="text-slate-300 font-mono">{c.phone}</span>
+                          </div>
+                        ))}
+                        {manualResults.length > 20 && <p className="text-xs text-slate-500">...and {manualResults.length - 20} more</p>}
+                      </div>
+
+                      <div className="bg-black/20 rounded-xl p-4 border border-white/5 space-y-3">
+                        <p className="text-xs font-bold text-slate-400 uppercase">Assign a label before saving</p>
+                        <div className="flex items-center gap-3">
+                          <select id="manual-label-select" onChange={(e) => { if (e.target.value === '__new__') { setShowLabelModal(true); e.target.value = ''; } }}
+                            className="bg-black/30 border border-white/10 rounded-xl p-2.5 text-sm flex-1">
+                            <option value="">No label</option>
+                            {labels.map(l => <option key={l.id} value={l.id}>⬤ {l.name}</option>)}
+                            <option value="__new__">＋ Create new label...</option>
+                          </select>
+                          <button onClick={() => { const sel = document.getElementById('manual-label-select'); importManualResults(sel.value || null); }}
+                            className="px-6 py-2.5 bg-whatsapp-light/20 text-whatsapp-light border border-whatsapp-light/30 rounded-xl font-bold text-sm whitespace-nowrap">
+                            + Save All Contacts
+                          </button>
+                        </div>
+                        {labels.length > 0 && (
+                          <div className="flex flex-wrap gap-1.5 pt-1">
+                            {labels.map(l => (
+                              <button key={l.id} onClick={() => { document.getElementById('manual-label-select').value = l.id; }}
                                 className="flex items-center space-x-1.5 px-2.5 py-1 rounded-full border border-white/10 bg-white/5 hover:bg-white/10 transition-all cursor-pointer">
                                 <span className="w-2.5 h-2.5 rounded-full" style={{ background: l.color }}></span>
                                 <span className="text-[10px] font-bold text-slate-300">{l.name}</span>
@@ -1216,6 +1315,31 @@ function App() {
 
         </AnimatePresence>
       </main>
+
+      {/* Subscription Expired Popup */}
+      {isExpired && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-[200]">
+          <div className="bg-[#1e293b] rounded-3xl p-10 w-full max-w-md border border-red-500/20 text-center space-y-6">
+            <div className="w-20 h-20 bg-red-500/10 rounded-full flex items-center justify-center text-red-400 text-4xl mx-auto">
+              <i className="fas fa-calendar-xmark"></i>
+            </div>
+            <h2 className="text-xl font-bold text-red-400">Subscription Expired</h2>
+            <p className="text-sm text-slate-300">Your subscription has expired. Please renew to continue using the CRM dashboard.</p>
+            <div className="bg-black/30 rounded-xl p-4 border border-white/5">
+              <p className="text-xs text-slate-400">Business: <span className="font-bold text-white">{activeBiz?.name}</span></p>
+              {activeBiz?.nextDue && <p className="text-xs text-slate-500 mt-1">Due date: {new Date(activeBiz.nextDue).toLocaleDateString()}</p>}
+            </div>
+            <p className="text-xs text-slate-400">Contact your administrator to renew your subscription.</p>
+            <div className="flex gap-3">
+              <a href="https://wa.me/94760216497" target="_blank" rel="noopener noreferrer"
+                className="flex-1 py-3 bg-whatsapp-light/20 text-whatsapp-light rounded-xl font-bold text-sm border border-whatsapp-light/30 flex items-center justify-center space-x-2">
+                <i className="fab fa-whatsapp"></i><span>Contact Support</span>
+              </a>
+              <button onClick={handleAuthLogout} className="flex-1 py-3 bg-white/5 rounded-xl font-bold text-sm border border-white/10">Logout</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* New Label Modal */}
       {showLabelModal && (
