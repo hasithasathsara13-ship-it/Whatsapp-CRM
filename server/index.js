@@ -6,6 +6,7 @@ const qrcode = require('qrcode');
 const fs = require('fs-extra');
 const path = require('path');
 const cors = require('cors');
+const WebSocket = require('ws');
 const { createClient } = require('@supabase/supabase-js');
 
 const PORT = 8790;
@@ -342,7 +343,7 @@ io.on('connection', (socket) => {
 
 const SUPABASE_URL = 'https://skmsrkkcwufkgynvpods.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNrbXNya2tjd3Vma2d5bnZwb2RzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNTc3MzYsImV4cCI6MjA5MDczMzczNn0.AFfqJq3IPIE3U62DCAeGESUa5AJZ_BjQCjj6SO96WYA';
-const supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { realtime: { transport: WebSocket } });
 
 // --- AUTH: Login with VeloAI credentials ---
 app.post('/api/auth/login', async (req, res) => {
@@ -506,29 +507,44 @@ async function scrapeWithPuppeteer(socket, params) {
     const query = parts.join(' ');
 
     let execPath = null;
-    const cacheDir = path.join(require('os').homedir(), '.cache', 'puppeteer');
-    if (fs.existsSync(cacheDir)) {
-        const find = (dir) => {
-            for (const f of fs.readdirSync(dir, { withFileTypes: true })) {
-                const full = path.join(dir, f.name);
-                if (f.isDirectory()) { const r = find(full); if (r) return r; }
-                else if (f.name === 'chrome.exe') return full;
-            }
-            return null;
-        };
-        execPath = find(cacheDir);
+    // On Linux servers, look for system chromium first
+    const linuxPaths = ['/usr/bin/chromium-browser', '/usr/bin/chromium', '/usr/bin/google-chrome', '/usr/bin/google-chrome-stable'];
+    for (const p of linuxPaths) {
+        if (fs.existsSync(p)) { execPath = p; break; }
     }
+    // Fallback: search puppeteer cache (handles both chrome.exe on Windows and chrome on Linux)
+    if (!execPath) {
+        const cacheDir = path.join(require('os').homedir(), '.cache', 'puppeteer');
+        if (fs.existsSync(cacheDir)) {
+            const find = (dir) => {
+                for (const f of fs.readdirSync(dir, { withFileTypes: true })) {
+                    const full = path.join(dir, f.name);
+                    if (f.isDirectory()) { const r = find(full); if (r) return r; }
+                    else if (f.name === 'chrome.exe' || f.name === 'chrome') return full;
+                }
+                return null;
+            };
+            execPath = find(cacheDir);
+        }
+    }
+
+    // Display detection: Xvfb on the server sets DISPLAY (e.g. :99) so we can run a VISIBLE browser
+    // and stream it via VNC. Windows/local always has a display.
+    const hasDisplay = process.platform === 'win32' || !!process.env.DISPLAY;
+    const isServer = process.platform === 'linux';
 
     let browser = null;
     try {
         browser = await puppeteer.launch({
             executablePath: execPath || undefined,
-            headless: false,
+            headless: hasDisplay ? false : 'new',
             userDataDir: path.join(__dirname, '.scraper_profile'),
             args: [
                 '--no-sandbox', '--disable-setuid-sandbox',
                 '--disable-blink-features=AutomationControlled',
-                '--disable-infobars', '--window-size=1280,800', '--lang=en-US'
+                '--disable-infobars', '--window-size=1280,800', '--lang=en-US',
+                '--disable-dev-shm-usage', '--disable-gpu',
+                '--start-maximized'
             ],
             ignoreDefaultArgs: ['--enable-automation'],
         });
@@ -575,8 +591,33 @@ async function scrapeWithPuppeteer(socket, params) {
                 });
 
                 if (data.blocked) {
+                    if (!hasDisplay) {
+                        // Truly headless (no Xvfb) — skip straight to DuckDuckGo
+                        console.log('[Scrape] Page ' + (p+1) + ': Google blocked, no display -> DuckDuckGo');
+                        socket.emit('scrape_progress', { page: p+1, totalPages: pages, found: contacts.length, status: 'google_blocked', engine: 'google' });
+                        engineName = 'duckduckgo';
+                        const dUrl = p === 0 ? 'https://html.duckduckgo.com/html/?q=' + encodeURIComponent(query) : 'https://html.duckduckgo.com/html/?q=' + encodeURIComponent(query) + '&s=' + (p*30);
+                        await page.goto(dUrl, { waitUntil: 'domcontentloaded', timeout: 25000 });
+                        await sleep(2000 + Math.random() * 1500);
+                        data = await page.evaluate(() => {
+                            const t = document.body ? document.body.innerText : '';
+                            const tel = []; document.querySelectorAll('a[href^="tel:"]').forEach(a => tel.push(a.getAttribute('href').replace('tel:','')));
+                            const titles = []; const urls = [];
+                            document.querySelectorAll('a.result__a').forEach(a => { if (a.innerText.trim()) titles.push(a.innerText.trim()); });
+                            document.querySelectorAll('a.result__url, a.result__a').forEach(a => { const h = a.getAttribute('href')||''; if (h.startsWith('http')) urls.push(h); });
+                            return { text: t, titles, tel, blocked: false, len: t.length, urls };
+                        });
+                    } else {
                     console.log('[Scrape] Page ' + (p+1) + ': reCAPTCHA / block detected — waiting for user to solve');
-                    socket.emit('scrape_captcha', { page: p+1, message: 'Google needs verification. A browser window is open — please solve the reCAPTCHA there, then it will continue automatically.' });
+                    // On the server, the visible browser is streamed via noVNC. Locally, a real window opens.
+                    const vncUrl = isServer ? '/vnc/vnc.html?autoconnect=true&resize=remote' : null;
+                    socket.emit('scrape_captcha', {
+                        page: p+1,
+                        vncUrl,
+                        message: isServer
+                            ? 'Google needs verification. Click "Open Browser" below to view the live browser and solve the reCAPTCHA — it will continue automatically.'
+                            : 'Google needs verification. A browser window is open — please solve the reCAPTCHA there, then it will continue automatically.'
+                    });
 
                     // Poll the page until captcha is solved (max ~3 minutes)
                     const maxWaitMs = 180000;
@@ -625,6 +666,7 @@ async function scrapeWithPuppeteer(socket, params) {
                             document.querySelectorAll('a.result__url, a.result__a').forEach(a => { const h = a.getAttribute('href')||''; if (h.startsWith('http')) urls.push(h); });
                             return { text: t, titles, tel, blocked: false, len: t.length, urls };
                         });
+                    }
                     }
                 }
 
@@ -691,6 +733,7 @@ app.post('/api/scrape-leads', async (req, res) => {
 // Helper: create an authenticated supabase client with user's token
 function getAuthClient(token) {
     return createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+        realtime: { transport: WebSocket },
         global: { headers: { Authorization: `Bearer ${token}` } }
     });
 }

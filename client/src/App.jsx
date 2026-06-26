@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { io } from 'socket.io-client';
 import { motion, AnimatePresence } from 'framer-motion';
 import * as XLSX from 'xlsx';
@@ -213,7 +213,7 @@ function App() {
     });
     socket.on('scrape_progress', (data) => { setScrapeProgress(data); });
     socket.on('scrape_number', (data) => { setScrapeLiveNumbers(prev => [data.contact, ...prev].slice(0, 100)); });
-    socket.on('scrape_captcha', (data) => { setScrapeCaptcha({ waiting: true, message: data.message, elapsed: 0 }); });
+    socket.on('scrape_captcha', (data) => { setScrapeCaptcha({ waiting: true, message: data.message, elapsed: 0, vncUrl: data.vncUrl }); });
     socket.on('scrape_captcha_waiting', (data) => { setScrapeCaptcha(prev => prev ? { ...prev, elapsed: data.elapsed } : prev); });
     socket.on('scrape_captcha_solved', () => { setScrapeCaptcha(null); });
     socket.on('scrape_done', (data) => {
@@ -750,13 +750,13 @@ function App() {
                     {mediaActive && (
                       <div className="p-4 bg-white/5 rounded-xl border border-dashed border-white/20 text-center">
                         <input type="file" className="hidden" id="wa-media" accept="image/*,video/*" onChange={(e) => handleFileChange(e, 'media')} />
-                        <label htmlFor="wa-media" className="cursor-pointer text-xs text-slate-400 hover:text-slate-200">{mediaFile ? `âœ… ${mediaFile.name}` : 'Click to select Image or Video'}</label>
+                        <label htmlFor="wa-media" className="cursor-pointer text-xs text-slate-400 hover:text-slate-200">{mediaFile ? `✅ ${mediaFile.name}` : 'Click to select Image or Video'}</label>
                       </div>
                     )}
                     {docActive && (
                       <div className="p-4 bg-white/5 rounded-xl border border-dashed border-white/20 text-center">
                         <input type="file" className="hidden" id="wa-doc" onChange={(e) => handleFileChange(e, 'doc')} />
-                        <label htmlFor="wa-doc" className="cursor-pointer text-xs text-slate-400 hover:text-slate-200">{docFile ? `âœ… ${docFile.name}` : 'Click to select Document/PDF'}</label>
+                        <label htmlFor="wa-doc" className="cursor-pointer text-xs text-slate-400 hover:text-slate-200">{docFile ? `✅ ${docFile.name}` : 'Click to select Document/PDF'}</label>
                       </div>
                     )}
                   </div>
@@ -819,7 +819,7 @@ function App() {
 
                   {spreadsheetResults && (
                     <div className="bg-black/30 rounded-2xl p-6 border border-white/5 space-y-4">
-                      <p className="text-sm font-bold text-green-400">âœ… Found {spreadsheetResults.length} contacts</p>
+                      <p className="text-sm font-bold text-green-400">✅ Found {spreadsheetResults.length} contacts</p>
                       <div className="max-h-40 overflow-y-auto space-y-1">
                         {spreadsheetResults.slice(0, 20).map((c, i) => (
                           <div key={i} className="flex items-center justify-between text-xs py-1 border-b border-white/5">
@@ -836,8 +836,8 @@ function App() {
                           <select id="spreadsheet-label-select" onChange={(e) => { if (e.target.value === '__new__') { setShowLabelModal(true); e.target.value = ''; } }}
                             className="bg-black/30 border border-white/10 rounded-xl p-2.5 text-sm flex-1">
                             <option value="">No label</option>
-                            {labels.map(l => <option key={l.id} value={l.id}>â¬¤ {l.name}</option>)}
-                            <option value="__new__">ï¼‹ Create new label...</option>
+                            {labels.map(l => <option key={l.id} value={l.id}>⬤ {l.name}</option>)}
+                            <option value="__new__">＋ Create new label...</option>
                           </select>
                           <button onClick={() => { const sel = document.getElementById('spreadsheet-label-select'); importSpreadsheetResults(sel.value || null); }}
                             className="px-6 py-2.5 bg-whatsapp-light/20 text-whatsapp-light border border-whatsapp-light/30 rounded-xl font-bold text-sm whitespace-nowrap">
@@ -879,7 +879,7 @@ function App() {
 
                   {manualResults && (
                     <div className="bg-black/30 rounded-2xl p-6 border border-white/5 space-y-4">
-                      <p className="text-sm font-bold text-green-400">âœ… {manualResults.length} valid numbers parsed</p>
+                      <p className="text-sm font-bold text-green-400">✅ {manualResults.length} valid numbers parsed</p>
                       <div className="max-h-40 overflow-y-auto space-y-1">
                         {manualResults.slice(0, 20).map((c, i) => (
                           <div key={i} className="flex items-center text-xs py-1 border-b border-white/5">
@@ -895,8 +895,8 @@ function App() {
                           <select id="manual-label-select" onChange={(e) => { if (e.target.value === '__new__') { setShowLabelModal(true); e.target.value = ''; } }}
                             className="bg-black/30 border border-white/10 rounded-xl p-2.5 text-sm flex-1">
                             <option value="">No label</option>
-                            {labels.map(l => <option key={l.id} value={l.id}>â¬¤ {l.name}</option>)}
-                            <option value="__new__">ï¼‹ Create new label...</option>
+                            {labels.map(l => <option key={l.id} value={l.id}>⬤ {l.name}</option>)}
+                            <option value="__new__">＋ Create new label...</option>
                           </select>
                           <button onClick={() => { const sel = document.getElementById('manual-label-select'); importManualResults(sel.value || null); }}
                             className="px-6 py-2.5 bg-whatsapp-light/20 text-whatsapp-light border border-whatsapp-light/30 rounded-xl font-bold text-sm whitespace-nowrap">
@@ -982,6 +982,12 @@ function App() {
                           <p className="text-xs text-slate-300">{scrapeCaptcha.message}</p>
                         </div>
                       </div>
+                      {scrapeCaptcha.vncUrl && (
+                        <a href={scrapeCaptcha.vncUrl} target="_blank" rel="noopener noreferrer"
+                          className="block w-full text-center px-4 py-3 bg-blue-500/20 text-blue-300 border border-blue-500/40 rounded-xl text-sm font-bold hover:bg-blue-500/30">
+                          <i className="fas fa-up-right-from-square mr-2"></i>Open Live Browser to Solve
+                        </a>
+                      )}
                       <div className="flex items-center justify-between">
                         <p className="text-[11px] text-slate-400">
                           <i className="fas fa-circle-notch fa-spin mr-1"></i>
@@ -989,7 +995,7 @@ function App() {
                         </p>
                         <button onClick={() => socket.emit('captcha_solved')}
                           className="px-4 py-2 bg-amber-500/20 text-amber-300 border border-amber-500/40 rounded-xl text-xs font-bold hover:bg-amber-500/30">
-                          I've Solved It â€” Continue
+                          I've Solved It — Continue
                         </button>
                       </div>
                     </div>
@@ -1006,7 +1012,7 @@ function App() {
                         <p className="text-sm font-bold text-whatsapp-light">{scrapeProgress.found} numbers found</p>
                       </div>
                       {scrapeProgress.status === 'google_blocked' && (
-                        <p className="text-xs text-amber-400">âš ï¸ Google blocked â€” switching to DuckDuckGo...</p>
+                        <p className="text-xs text-amber-400">⚠️ Google blocked — switching to DuckDuckGo...</p>
                       )}
                       {/* Progress Bar */}
                       <div className="w-full h-2 bg-white/5 rounded-full overflow-hidden">
@@ -1029,7 +1035,7 @@ function App() {
                   {scrapeResults && !scraping && (
                     <div className="bg-black/30 rounded-2xl p-6 border border-white/5 space-y-4">
                       <div className="flex items-center justify-between">
-                        <p className="text-sm font-bold text-green-400">âœ… Found {scrapeResults.length} phone numbers</p>
+                        <p className="text-sm font-bold text-green-400">✅ Found {scrapeResults.length} phone numbers</p>
                         {scrapeProgress.status === 'done' && scrapeProgress.engine && (
                           <span className="text-[10px] text-slate-500">via {scrapeProgress.engine}</span>
                         )}
@@ -1047,8 +1053,8 @@ function App() {
                         <select id="scrape-label-select" onChange={(e) => { if (e.target.value === '__new__') { setShowLabelModal(true); e.target.value = ''; } }}
                           className="bg-black/30 border border-white/10 rounded-xl p-2 text-sm flex-1">
                           <option value="">No label</option>
-                          {labels.map(l => <option key={l.id} value={l.id}>â¬¤ {l.name}</option>)}
-                          <option value="__new__">ï¼‹ Create new label...</option>
+                          {labels.map(l => <option key={l.id} value={l.id}>⬤ {l.name}</option>)}
+                          <option value="__new__">＋ Create new label...</option>
                         </select>
                         <button onClick={() => importScrapeResults(document.getElementById('scrape-label-select').value || null)}
                           className="px-6 py-2 bg-whatsapp-light/20 text-whatsapp-light border border-whatsapp-light/30 rounded-xl font-bold text-sm">
@@ -1096,9 +1102,9 @@ function App() {
                   {botResults && (
                     <div className="bg-black/30 rounded-2xl p-6 border border-white/5 space-y-4">
                       <div className="flex items-center justify-between">
-                        <p className="text-sm font-bold text-green-400">âœ… Found {botResults.all.length} contacts</p>
+                        <p className="text-sm font-bold text-green-400">✅ Found {botResults.all.length} contacts</p>
                         {botResults.duplicates > 0 && (
-                          <p className="text-xs text-amber-400 bg-amber-500/10 px-2 py-1 rounded-lg">âš ï¸ {botResults.duplicates} already saved (skipped)</p>
+                          <p className="text-xs text-amber-400 bg-amber-500/10 px-2 py-1 rounded-lg">⚠️ {botResults.duplicates} already saved (skipped)</p>
                         )}
                       </div>
 
@@ -1124,8 +1130,8 @@ function App() {
                               <select id="bot-label-select" onChange={(e) => { if (e.target.value === '__new__') { setShowLabelModal(true); e.target.value = ''; } }}
                                 className="bg-black/30 border border-white/10 rounded-xl p-2.5 text-sm flex-1">
                                 <option value="">No label</option>
-                                {labels.map(l => <option key={l.id} value={l.id}>â¬¤ {l.name}</option>)}
-                                <option value="__new__">ï¼‹ Create new label...</option>
+                                {labels.map(l => <option key={l.id} value={l.id}>⬤ {l.name}</option>)}
+                                <option value="__new__">＋ Create new label...</option>
                               </select>
                               <button onClick={() => {
                                 const sel = document.getElementById('bot-label-select');
@@ -1178,7 +1184,7 @@ function App() {
                             <span className="text-xs font-bold cursor-pointer" onDoubleClick={() => startEditLabel(l)} title="Double-click to rename">{l.name}</span>
                           )}
                           <span className="text-[10px] text-slate-500">({contacts.filter(c => c.label === l.id).length})</span>
-                          <button onClick={() => { const cnt = contacts.filter(c => c.label === l.id).length; if (window.confirm(`Delete label "${l.name}" and its ${cnt} contact(s)? This cannot be undone.`)) deleteLabel(l.id); }} className="text-red-400/50 hover:text-red-400 text-xs ml-1">Ã—</button>
+                          <button onClick={() => { const cnt = contacts.filter(c => c.label === l.id).length; if (window.confirm(`Delete label "${l.name}" and its ${cnt} contact(s)? This cannot be undone.`)) deleteLabel(l.id); }} className="text-red-400/50 hover:text-red-400 text-xs ml-1">×</button>
                         </div>
                       ))}
                       {labels.length === 0 && <p className="text-xs text-slate-500">No labels yet. Create one to organize contacts.</p>}
@@ -1228,7 +1234,7 @@ function App() {
                                   </select>
                                 </td>
                                 <td className="p-2">
-                                  <button onClick={() => deleteContacts([c.id])} className="text-red-400/60 hover:text-red-400 text-xs">ðŸ—‘ï¸</button>
+                                  <button onClick={() => deleteContacts([c.id])} className="text-red-400/60 hover:text-red-400 text-xs">🗑️</button>
                                 </td>
                               </tr>
                             );
@@ -1267,7 +1273,7 @@ function App() {
                           </button>
                         );
                       })}
-                      {labels.length === 0 && <p className="text-xs text-slate-500">No labels created yet. Go to Contacts â†’ Manage to create labels.</p>}
+                      {labels.length === 0 && <p className="text-xs text-slate-500">No labels created yet. Go to Contacts → Manage to create labels.</p>}
                     </div>
                     <div className="bg-black/30 rounded-xl p-4 border border-white/5">
                       <p className="text-sm"><span className="text-whatsapp-light font-bold">{campaignContacts.length}</span> contacts will receive this campaign</p>
@@ -1334,7 +1340,7 @@ function App() {
                   <h4 className="text-xs font-bold text-slate-500 mb-4 uppercase flex items-center space-x-2"><i className="fas fa-terminal"></i><span>Activity Log</span></h4>
                   <div className="bg-black/50 border border-white/5 rounded-2xl p-6 h-64 overflow-y-auto font-mono text-[11px] space-y-1">
                     {progress.logs.map((log, i) => (
-                      <div key={i} className={`${log.includes('âœ…') ? 'text-green-400' : log.includes('âŒ') ? 'text-red-400' : 'text-slate-400'}`}>{log}</div>
+                      <div key={i} className={`${log.includes('✅') ? 'text-green-400' : log.includes('❌') ? 'text-red-400' : 'text-slate-400'}`}>{log}</div>
                     ))}
                     {progress.logs.length === 0 && <p className="text-slate-600">Waiting for campaign to start...</p>}
                   </div>
