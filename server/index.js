@@ -335,6 +335,68 @@ io.on('connection', (socket) => {
     });
 
     socket.on('stop_scrape', () => { scrapeAbort = true; });
+
+    // ---- GROUP CONTACT EXTRACTOR ----
+    socket.on('get_groups', async () => {
+        if (!isConnected || !client) {
+            return socket.emit('groups_list', { error: 'WhatsApp not connected' });
+        }
+        try {
+            const chats = await client.getChats();
+            const groups = chats.filter(c => c.isGroup).map(g => ({
+                id: g.id._serialized,
+                name: g.name,
+                participantCount: g.participants ? g.participants.length : 0
+            }));
+            socket.emit('groups_list', { groups });
+        } catch (err) {
+            socket.emit('groups_list', { error: err.message });
+        }
+    });
+
+    socket.on('extract_group_contacts', async (data) => {
+        const { groupId } = data;
+        if (!isConnected || !client) {
+            return socket.emit('group_contacts', { error: 'WhatsApp not connected' });
+        }
+        if (!groupId) {
+            return socket.emit('group_contacts', { error: 'No group selected' });
+        }
+        try {
+            const chat = await client.getChatById(groupId);
+            if (!chat.isGroup) {
+                return socket.emit('group_contacts', { error: 'Not a group chat' });
+            }
+            // Fetch full participant list
+            const participants = chat.participants || [];
+            const contacts = participants.map(p => {
+                const phone = p.id.user; // Just the number without @c.us
+                return {
+                    phone,
+                    name: null,
+                    isAdmin: p.isAdmin || p.isSuperAdmin || false,
+                    source: 'group'
+                };
+            }).filter(c => c.phone && c.phone.length >= 9);
+
+            // Try to get display names for participants
+            for (let i = 0; i < contacts.length; i++) {
+                try {
+                    const contact = await client.getContactById(contacts[i].phone + '@c.us');
+                    contacts[i].name = contact.pushname || contact.name || contact.shortName || null;
+                } catch (e) {}
+            }
+
+            socket.emit('group_contacts', {
+                groupId,
+                groupName: chat.name,
+                contacts,
+                total: contacts.length
+            });
+        } catch (err) {
+            socket.emit('group_contacts', { error: err.message });
+        }
+    });
 });
 
 // ============================================================

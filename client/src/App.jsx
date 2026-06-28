@@ -67,6 +67,13 @@ function App() {
   const [botResults, setBotResults] = useState(null);
   const [botTimeFilter, setBotTimeFilter] = useState('all');
 
+  // Group Extractor State
+  const [groupsList, setGroupsList] = useState([]);
+  const [groupsLoading, setGroupsLoading] = useState(false);
+  const [selectedGroup, setSelectedGroup] = useState(null);
+  const [groupContacts, setGroupContacts] = useState(null);
+  const [extractingGroup, setExtractingGroup] = useState(false);
+
   // Execution State
   const [isBroadcasting, setIsBroadcasting] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
@@ -223,7 +230,17 @@ function App() {
       setScrapeResults(data.contacts || []);
       setScrapeProgress(p => ({ ...p, status: 'done', found: data.total || 0 }));
     });
-    return () => { socket.off('status'); socket.off('qr'); socket.off('broadcast_status'); socket.off('scrape_progress'); socket.off('scrape_number'); socket.off('scrape_done'); socket.off('scrape_captcha'); socket.off('scrape_captcha_waiting'); socket.off('scrape_captcha_solved'); };
+    socket.on('groups_list', (data) => {
+      setGroupsLoading(false);
+      if (data.error) { alert('Failed to get groups: ' + data.error); return; }
+      setGroupsList(data.groups || []);
+    });
+    socket.on('group_contacts', (data) => {
+      setExtractingGroup(false);
+      if (data.error) { alert('Failed to extract contacts: ' + data.error); return; }
+      setGroupContacts(data);
+    });
+    return () => { socket.off('status'); socket.off('qr'); socket.off('broadcast_status'); socket.off('scrape_progress'); socket.off('scrape_number'); socket.off('scrape_done'); socket.off('scrape_captcha'); socket.off('scrape_captcha_waiting'); socket.off('scrape_captcha_solved'); socket.off('groups_list'); socket.off('group_contacts'); };
   }, []);
 
   // --- LABEL MANAGEMENT ---
@@ -486,6 +503,30 @@ function App() {
     const added = await addContacts(botResults.new.map(c => ({ ...c, source: 'bot' })), labelId);
     alert(`Saved ${added} bot contacts to database.`);
     setBotResults(null);
+  };
+
+  // --- GROUP CONTACT EXTRACTOR ---
+  const fetchGroups = () => {
+    if (!status.connected) return alert('Connect WhatsApp first!');
+    setGroupsLoading(true);
+    setGroupsList([]);
+    setGroupContacts(null);
+    socket.emit('get_groups');
+  };
+
+  const extractGroupContacts = (groupId) => {
+    if (!groupId) return;
+    setExtractingGroup(true);
+    setGroupContacts(null);
+    setSelectedGroup(groupId);
+    socket.emit('extract_group_contacts', { groupId });
+  };
+
+  const importGroupContacts = async (labelId) => {
+    if (!groupContacts || groupContacts.contacts.length === 0) return;
+    const added = await addContacts(groupContacts.contacts.map(c => ({ ...c, source: 'group' })), labelId);
+    alert(`Saved ${added} contacts from group "${groupContacts.groupName}" (duplicates skipped).`);
+    setGroupContacts(null);
   };
 
   // --- MEDIA HANDLING ---
@@ -793,6 +834,7 @@ function App() {
                   { id: 'spreadsheet', label: 'Spreadsheet', icon: 'fa-file-excel' },
                   { id: 'manual', label: 'Manual Entry', icon: 'fa-keyboard' },
                   { id: 'scraper', label: 'Lead Scraper', icon: 'fa-search' },
+                  { id: 'groups', label: 'Group Extract', icon: 'fa-users' },
                   ...(activePlan !== 'crm_only' ? [{ id: 'bot', label: 'Bot Contacts', icon: 'fa-robot' }] : []),
                   { id: 'manage', label: 'Manage', icon: 'fa-tags' },
                 ].map(src => (
@@ -1059,6 +1101,80 @@ function App() {
                         <button onClick={() => importScrapeResults(document.getElementById('scrape-label-select').value || null)}
                           className="px-6 py-2 bg-whatsapp-light/20 text-whatsapp-light border border-whatsapp-light/30 rounded-xl font-bold text-sm">
                           + Save All
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* GROUP CONTACT EXTRACTOR */}
+              {contactSource === 'groups' && (
+                <div className="glass p-8 rounded-[2rem] border-white/5 space-y-6">
+                  <h3 className="text-lg font-bold flex items-center space-x-2"><i className="fas fa-users text-indigo-400"></i><span>WhatsApp Group Extractor</span></h3>
+                  <p className="text-xs text-slate-400">Extract phone numbers from any WhatsApp group you're a member of.</p>
+
+                  <button onClick={fetchGroups} disabled={groupsLoading || !status.connected}
+                    className="px-6 py-3 bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 rounded-xl font-bold text-sm hover:bg-indigo-500/30 disabled:opacity-50">
+                    {groupsLoading ? <><i className="fas fa-circle-notch fa-spin mr-2"></i>Loading Groups...</> : <><i className="fas fa-download mr-2"></i>Load My Groups</>}
+                  </button>
+
+                  {!status.connected && (
+                    <p className="text-xs text-red-400">Connect WhatsApp first to see your groups.</p>
+                  )}
+
+                  {groupsList.length > 0 && (
+                    <div className="space-y-3">
+                      <p className="text-xs text-slate-400 font-bold">{groupsList.length} groups found. Select one to extract contacts:</p>
+                      <div className="max-h-60 overflow-y-auto space-y-2 pr-2">
+                        {groupsList.map(g => (
+                          <button key={g.id} onClick={() => extractGroupContacts(g.id)}
+                            disabled={extractingGroup}
+                            className={`w-full text-left px-4 py-3 rounded-xl border text-sm font-medium transition-all ${selectedGroup === g.id ? 'bg-indigo-500/20 border-indigo-500/40 text-indigo-300' : 'bg-black/20 border-white/10 text-slate-300 hover:bg-white/5'}`}>
+                            <div className="flex justify-between items-center">
+                              <span><i className="fas fa-users mr-2 text-indigo-400"></i>{g.name}</span>
+                              <span className="text-[10px] text-slate-500">{g.participantCount || '?'} members</span>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {extractingGroup && (
+                    <div className="flex items-center space-x-2 text-xs text-slate-400">
+                      <i className="fas fa-circle-notch fa-spin"></i>
+                      <span>Extracting contacts... this may take a moment for large groups.</span>
+                    </div>
+                  )}
+
+                  {groupContacts && (
+                    <div className="bg-black/30 rounded-2xl p-6 border border-white/5 space-y-4">
+                      <div className="flex items-center justify-between">
+                        <p className="text-sm font-bold text-green-400">✅ Extracted {groupContacts.total} contacts from "{groupContacts.groupName}"</p>
+                      </div>
+                      <div className="max-h-40 overflow-y-auto space-y-1">
+                        {groupContacts.contacts.slice(0, 20).map((c, i) => (
+                          <div key={i} className="flex items-center justify-between text-xs text-slate-300 bg-black/20 px-3 py-1.5 rounded-lg">
+                            <span>{c.phone}</span>
+                            <div className="flex items-center space-x-2">
+                              {c.name && <span className="text-slate-500">{c.name}</span>}
+                              {c.isAdmin && <span className="text-amber-400 text-[10px] font-bold">ADMIN</span>}
+                            </div>
+                          </div>
+                        ))}
+                        {groupContacts.total > 20 && <p className="text-[10px] text-slate-500 text-center">...and {groupContacts.total - 20} more</p>}
+                      </div>
+
+                      <div className="flex items-center space-x-3">
+                        <p className="text-[10px] text-slate-500 font-bold uppercase">Assign a label before saving</p>
+                        <select id="group-label-select" className="bg-black/30 border border-white/10 rounded-xl px-3 py-2 text-xs flex-1">
+                          {labels.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+                          {labels.length === 0 && <option value="">No labels - create one first</option>}
+                        </select>
+                        <button onClick={() => importGroupContacts(document.getElementById('group-label-select')?.value)}
+                          className="px-6 py-3 bg-green-500/20 text-green-400 border border-green-500/30 rounded-xl font-bold text-sm hover:bg-green-500/30">
+                          + Save All Contacts
                         </button>
                       </div>
                     </div>
