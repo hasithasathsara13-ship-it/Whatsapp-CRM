@@ -434,14 +434,74 @@ io.on('connection', (socket) => {
             if (!chat && joinIfNeeded) {
                 try {
                     console.log('[Group] Attempting to join via invite code:', inviteCode);
-                    const groupId = await client.acceptInvite(inviteCode);
-                    console.log('[Group] Joined successfully, groupId:', groupId);
-                    // Wait for group to load
-                    await new Promise(r => setTimeout(r, 5000));
-                    chat = await client.getChatById(groupId._serialized || groupId);
+                    // Method 1: Try acceptInvite API
+                    let joined = false;
+                    try {
+                        const result = await client.acceptInvite(inviteCode);
+                        if (result) {
+                            const gId = result._serialized || result;
+                            await new Promise(r => setTimeout(r, 5000));
+                            chat = await client.getChatById(gId);
+                            joined = true;
+                            console.log('[Group] Joined via acceptInvite');
+                        }
+                    } catch (e1) {
+                        console.log('[Group] acceptInvite failed:', e1.message || e1, '— trying workaround...');
+                    }
+
+                    // Method 2: Workaround - navigate to invite link in WA Web and click join
+                    if (!joined) {
+                        try {
+                            const page = client.pupPage;
+                            if (page) {
+                                // Use WhatsApp Web's internal join mechanism via URL
+                                const joinResult = await page.evaluate(async (code) => {
+                                    try {
+                                        // Use WA internal API to accept invite
+                                        const result = await window.WWebJS.acceptInvite(code);
+                                        return { success: true, id: result };
+                                    } catch (e) {
+                                        // Fallback: try the Store API directly
+                                        try {
+                                            if (window.Store && window.Store.InviteInfo) {
+                                                const info = await window.Store.InviteInfo.queryGroupInvite(code);
+                                                if (info && window.Store.Invite) {
+                                                    const joinResult = await window.Store.Invite.joinGroupViaInvite(code);
+                                                    return { success: true, id: joinResult };
+                                                }
+                                            }
+                                        } catch (e2) {}
+                                        return { success: false, error: e.message || 'Unknown' };
+                                    }
+                                }, inviteCode);
+
+                                if (joinResult.success) {
+                                    console.log('[Group] Joined via workaround, id:', joinResult.id);
+                                    await new Promise(r => setTimeout(r, 5000));
+                                    // Try to find the group in chats now
+                                    const chats = await client.getChats();
+                                    const newGroup = chats.filter(c => c.isGroup).sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))[0];
+                                    if (newGroup) {
+                                        chat = newGroup;
+                                        joined = true;
+                                    }
+                                } else {
+                                    console.log('[Group] Workaround also failed:', joinResult.error);
+                                }
+                            }
+                        } catch (e2) {
+                            console.error('[Group] Workaround error:', e2.message);
+                        }
+                    }
+
+                    if (!joined) {
+                        return socket.emit('group_contacts', { 
+                            error: 'Could not join this group automatically. This usually means the group requires admin approval or the link is invalid. Try joining from your phone, then use "Load My Groups" to extract contacts.' 
+                        });
+                    }
                 } catch (e) {
                     console.error('[Group] Join failed:', e);
-                    return socket.emit('group_contacts', { error: 'Failed to join group. The link may be invalid, expired, or the group requires admin approval. Error: ' + (e.message || JSON.stringify(e)) });
+                    return socket.emit('group_contacts', { error: 'Failed to join group: ' + (e.message || 'Unknown error. Try joining from your phone instead.') });
                 }
             }
 

@@ -1106,7 +1106,7 @@ function App() {
               {contactSource === 'groups' && (
                 <div className="glass p-8 rounded-[2rem] border-white/5 space-y-6">
                   <h3 className="text-lg font-bold flex items-center space-x-2"><i className="fas fa-users text-indigo-400"></i><span>WhatsApp Group Extractor</span></h3>
-                  <p className="text-xs text-slate-400">Extract phone numbers from any WhatsApp group you're a member of, or paste an invite link.</p>
+                  <p className="text-xs text-slate-400">Extract phone numbers from any WhatsApp group. Join the group on your phone first, then use "Load My Groups" to extract all contacts.</p>
 
                   {/* Invite Link Extraction */}
                   <div className="bg-black/20 rounded-2xl p-5 border border-white/5 space-y-3">
@@ -1125,7 +1125,7 @@ function App() {
                         <i className="fas fa-link mr-2"></i>Extract
                       </button>
                     </div>
-                    <p className="text-[10px] text-slate-500">You don't need to join the group — just paste the invite link to extract members.</p>
+                    <p className="text-[10px] text-slate-500">Preview members without joining. For the full list, join from your phone and use "Load My Groups" below.</p>
                   </div>
 
                   {/* OR separator */}
@@ -1179,16 +1179,17 @@ function App() {
                         <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 space-y-2">
                           <p className="text-xs text-amber-300">
                             <i className="fas fa-exclamation-triangle mr-1"></i>
-                            Only {groupContacts.total} of ~{groupContacts.actualSize} members shown (WhatsApp limits preview for non-members).
+                            Only {groupContacts.total} of ~{groupContacts.actualSize} members shown. WhatsApp limits preview for non-members.
                           </p>
                           <button onClick={() => {
                             const link = document.getElementById('group-invite-link')?.value;
                             setExtractingGroup(true); setGroupContacts(null);
                             socket.emit('extract_group_by_link', { inviteLink: link, joinIfNeeded: true });
                           }} disabled={extractingGroup}
-                            className="px-4 py-2 bg-amber-500/20 text-amber-300 border border-amber-500/40 rounded-xl text-xs font-bold hover:bg-amber-500/30">
+                            className="px-4 py-2 bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 rounded-xl text-xs font-bold hover:bg-indigo-500/30">
                             <i className="fas fa-right-to-bracket mr-1"></i>Join Group & Extract All {groupContacts.actualSize} Contacts
                           </button>
+                          <p className="text-[10px] text-slate-500">If this fails, join from your phone and use "Load My Groups" below.</p>
                         </div>
                       )}
 
