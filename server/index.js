@@ -433,12 +433,15 @@ io.on('connection', (socket) => {
             // If not in group and user wants to join
             if (!chat && joinIfNeeded) {
                 try {
+                    console.log('[Group] Attempting to join via invite code:', inviteCode);
                     const groupId = await client.acceptInvite(inviteCode);
+                    console.log('[Group] Joined successfully, groupId:', groupId);
                     // Wait for group to load
-                    await new Promise(r => setTimeout(r, 3000));
-                    chat = await client.getChatById(groupId);
+                    await new Promise(r => setTimeout(r, 5000));
+                    chat = await client.getChatById(groupId._serialized || groupId);
                 } catch (e) {
-                    return socket.emit('group_contacts', { error: 'Failed to join group: ' + e.message });
+                    console.error('[Group] Join failed:', e);
+                    return socket.emit('group_contacts', { error: 'Failed to join group. The link may be invalid, expired, or the group requires admin approval. Error: ' + (e.message || JSON.stringify(e)) });
                 }
             }
 
