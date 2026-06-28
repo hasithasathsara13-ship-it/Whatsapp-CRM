@@ -1112,7 +1112,34 @@ function App() {
               {contactSource === 'groups' && (
                 <div className="glass p-8 rounded-[2rem] border-white/5 space-y-6">
                   <h3 className="text-lg font-bold flex items-center space-x-2"><i className="fas fa-users text-indigo-400"></i><span>WhatsApp Group Extractor</span></h3>
-                  <p className="text-xs text-slate-400">Extract phone numbers from any WhatsApp group you're a member of.</p>
+                  <p className="text-xs text-slate-400">Extract phone numbers from any WhatsApp group you're a member of, or paste an invite link.</p>
+
+                  {/* Invite Link Extraction */}
+                  <div className="bg-black/20 rounded-2xl p-5 border border-white/5 space-y-3">
+                    <label className="text-[10px] text-slate-500 font-bold uppercase">Extract via Group Invite Link</label>
+                    <div className="flex gap-2">
+                      <input id="group-invite-link" type="text"
+                        className="flex-1 bg-black/30 border border-white/10 rounded-xl p-3 text-sm focus:outline-none focus:border-indigo-500/50"
+                        placeholder="https://chat.whatsapp.com/AbCdEfGh123..." />
+                      <button onClick={() => {
+                        const link = document.getElementById('group-invite-link')?.value;
+                        if (!link || !link.includes('chat.whatsapp.com')) return alert('Paste a valid WhatsApp group invite link');
+                        setExtractingGroup(true); setGroupContacts(null);
+                        socket.emit('extract_group_by_link', { inviteLink: link });
+                      }} disabled={extractingGroup || !status.connected}
+                        className="px-5 py-3 bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 rounded-xl font-bold text-sm hover:bg-indigo-500/30 disabled:opacity-50 whitespace-nowrap">
+                        <i className="fas fa-link mr-2"></i>Extract
+                      </button>
+                    </div>
+                    <p className="text-[10px] text-slate-500">You don't need to join the group — just paste the invite link to extract members.</p>
+                  </div>
+
+                  {/* OR separator */}
+                  <div className="flex items-center space-x-3">
+                    <div className="flex-1 h-px bg-white/10"></div>
+                    <span className="text-[10px] text-slate-500 font-bold">OR SELECT FROM YOUR GROUPS</span>
+                    <div className="flex-1 h-px bg-white/10"></div>
+                  </div>
 
                   <button onClick={fetchGroups} disabled={groupsLoading || !status.connected}
                     className="px-6 py-3 bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 rounded-xl font-bold text-sm hover:bg-indigo-500/30 disabled:opacity-50">

@@ -397,6 +397,58 @@ io.on('connection', (socket) => {
             socket.emit('group_contacts', { error: err.message });
         }
     });
+
+    // Extract contacts from a group invite link (without joining)
+    socket.on('extract_group_by_link', async (data) => {
+        const { inviteLink } = data;
+        if (!isConnected || !client) {
+            return socket.emit('group_contacts', { error: 'WhatsApp not connected' });
+        }
+        if (!inviteLink) {
+            return socket.emit('group_contacts', { error: 'No invite link provided' });
+        }
+        try {
+            // Extract invite code from link (e.g. https://chat.whatsapp.com/ABC123)
+            const inviteCode = inviteLink.trim().split('/').pop();
+            if (!inviteCode || inviteCode.length < 10) {
+                return socket.emit('group_contacts', { error: 'Invalid invite link format' });
+            }
+
+            // Get group metadata without joining
+            const groupInfo = await client.getInviteInfo(inviteCode);
+            if (!groupInfo) {
+                return socket.emit('group_contacts', { error: 'Could not fetch group info. The link may be invalid or expired.' });
+            }
+
+            const participants = groupInfo.participants || [];
+            const contacts = participants.map(p => {
+                const phone = p.id ? (p.id.user || p.id._serialized?.split('@')[0]) : null;
+                return {
+                    phone,
+                    name: null,
+                    isAdmin: p.isAdmin || p.isSuperAdmin || false,
+                    source: 'group_link'
+                };
+            }).filter(c => c.phone && c.phone.length >= 9);
+
+            // Try to get display names
+            for (let i = 0; i < Math.min(contacts.length, 50); i++) {
+                try {
+                    const contact = await client.getContactById(contacts[i].phone + '@c.us');
+                    contacts[i].name = contact.pushname || contact.name || contact.shortName || null;
+                } catch (e) {}
+            }
+
+            socket.emit('group_contacts', {
+                groupId: groupInfo.id?._serialized || inviteCode,
+                groupName: groupInfo.subject || 'Group via Invite Link',
+                contacts,
+                total: contacts.length
+            });
+        } catch (err) {
+            socket.emit('group_contacts', { error: 'Failed: ' + (err.message || 'Could not access group. Link may be invalid or you may need to join first.') });
+        }
+    });
 });
 
 // ============================================================
