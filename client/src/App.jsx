@@ -593,12 +593,9 @@ function App() {
       <div className="min-h-screen w-full flex flex-col items-center justify-center bg-[#070b14] text-white px-4">
         <div className="w-full max-w-sm">
           <div className="flex items-center justify-center space-x-3 mb-8">
-            <div className="w-12 h-12 rounded-xl flex items-center justify-center shadow-[0_0_20px_rgba(37,211,102,0.4)]">
-              <img src="/white.png" alt="Logo" className="w-10 h-10 object-contain" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-bold">Velo.ai <span className="text-whatsapp-light">Bulk Pro</span></h1>
-              <p className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">CRM Edition</p>
+            <div className="flex flex-col items-center">
+              <img src="/white.png" alt="Logo" className="h-12 object-contain" />
+              <p className="text-[10px] text-slate-500 uppercase tracking-widest font-bold mt-1">Bulk CRM Edition</p>
             </div>
           </div>
 
@@ -677,12 +674,9 @@ function App() {
       {/* Header */}
       <header className="w-full max-w-6xl flex justify-between items-center p-6 border-b border-white/5 bg-black/20 backdrop-blur-md sticky top-0 z-50">
         <div className="flex items-center space-x-3">
-          <div className="w-10 h-10 rounded-xl flex items-center justify-center shadow-[0_0_15px_rgba(37,211,102,0.4)]">
-            <img src="/white.png" alt="Logo" className="w-8 h-8 object-contain" />
-          </div>
+          <img src="/white.png" alt="Logo" className="h-9 object-contain" />
           <div>
-            <h1 className="text-xl font-bold tracking-tight">Velo.ai <span className="text-whatsapp-light">Bulk Pro</span></h1>
-            <p className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">CRM Edition v3.0</p>
+            <p className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">Bulk CRM Edition</p>
           </div>
         </div>
         <div className="flex items-center space-x-4">
