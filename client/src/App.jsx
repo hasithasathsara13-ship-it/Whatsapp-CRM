@@ -593,8 +593,8 @@ function App() {
       <div className="min-h-screen w-full flex flex-col items-center justify-center bg-[#070b14] text-white px-4">
         <div className="w-full max-w-sm">
           <div className="flex items-center justify-center space-x-3 mb-8">
-            <div className="w-12 h-12 bg-whatsapp-light rounded-xl flex items-center justify-center text-white text-2xl shadow-[0_0_20px_rgba(37,211,102,0.4)]">
-              <i className="fab fa-whatsapp"></i>
+            <div className="w-12 h-12 rounded-xl flex items-center justify-center shadow-[0_0_20px_rgba(37,211,102,0.4)]">
+              <img src="/white.png" alt="Logo" className="w-10 h-10 object-contain" />
             </div>
             <div>
               <h1 className="text-2xl font-bold">Velo.ai <span className="text-whatsapp-light">Bulk Pro</span></h1>
@@ -677,8 +677,8 @@ function App() {
       {/* Header */}
       <header className="w-full max-w-6xl flex justify-between items-center p-6 border-b border-white/5 bg-black/20 backdrop-blur-md sticky top-0 z-50">
         <div className="flex items-center space-x-3">
-          <div className="w-10 h-10 bg-whatsapp-light rounded-xl flex items-center justify-center text-white text-xl shadow-[0_0_15px_rgba(37,211,102,0.4)]">
-            <i className="fab fa-whatsapp"></i>
+          <div className="w-10 h-10 rounded-xl flex items-center justify-center shadow-[0_0_15px_rgba(37,211,102,0.4)]">
+            <img src="/white.png" alt="Logo" className="w-8 h-8 object-contain" />
           </div>
           <div>
             <h1 className="text-xl font-bold tracking-tight">Velo.ai <span className="text-whatsapp-light">Bulk Pro</span></h1>
