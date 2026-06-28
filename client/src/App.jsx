@@ -1180,6 +1180,24 @@ function App() {
                       <div className="flex items-center justify-between">
                         <p className="text-sm font-bold text-green-400">✅ Extracted {groupContacts.total} contacts from "{groupContacts.groupName}"</p>
                       </div>
+
+                      {groupContacts.partial && (
+                        <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 space-y-2">
+                          <p className="text-xs text-amber-300">
+                            <i className="fas fa-exclamation-triangle mr-1"></i>
+                            Only {groupContacts.total} of ~{groupContacts.actualSize} members shown (WhatsApp limits preview for non-members).
+                          </p>
+                          <button onClick={() => {
+                            const link = document.getElementById('group-invite-link')?.value;
+                            setExtractingGroup(true); setGroupContacts(null);
+                            socket.emit('extract_group_by_link', { inviteLink: link, joinIfNeeded: true });
+                          }} disabled={extractingGroup}
+                            className="px-4 py-2 bg-amber-500/20 text-amber-300 border border-amber-500/40 rounded-xl text-xs font-bold hover:bg-amber-500/30">
+                            <i className="fas fa-right-to-bracket mr-1"></i>Join Group & Extract All {groupContacts.actualSize} Contacts
+                          </button>
+                        </div>
+                      )}
+
                       <div className="max-h-40 overflow-y-auto space-y-1">
                         {groupContacts.contacts.slice(0, 20).map((c, i) => (
                           <div key={i} className="flex items-center justify-between text-xs text-slate-300 bg-black/20 px-3 py-1.5 rounded-lg">

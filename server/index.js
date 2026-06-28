@@ -398,9 +398,9 @@ io.on('connection', (socket) => {
         }
     });
 
-    // Extract contacts from a group invite link (without joining)
+    // Extract contacts from a group invite link
     socket.on('extract_group_by_link', async (data) => {
-        const { inviteLink } = data;
+        const { inviteLink, joinIfNeeded } = data;
         if (!isConnected || !client) {
             return socket.emit('group_contacts', { error: 'WhatsApp not connected' });
         }
@@ -414,24 +414,74 @@ io.on('connection', (socket) => {
                 return socket.emit('group_contacts', { error: 'Invalid invite link format' });
             }
 
-            // Get group metadata without joining
-            const groupInfo = await client.getInviteInfo(inviteCode);
-            if (!groupInfo) {
-                return socket.emit('group_contacts', { error: 'Could not fetch group info. The link may be invalid or expired.' });
+            let chat = null;
+            let groupName = 'Group';
+
+            // First try: check if we're already in this group
+            try {
+                const chats = await client.getChats();
+                for (const c of chats) {
+                    if (c.isGroup) {
+                        try {
+                            const code = await c.getInviteCode();
+                            if (code === inviteCode) { chat = c; break; }
+                        } catch (e) {}
+                    }
+                }
+            } catch (e) {}
+
+            // If not in group and user wants to join
+            if (!chat && joinIfNeeded) {
+                try {
+                    const groupId = await client.acceptInvite(inviteCode);
+                    // Wait for group to load
+                    await new Promise(r => setTimeout(r, 3000));
+                    chat = await client.getChatById(groupId);
+                } catch (e) {
+                    return socket.emit('group_contacts', { error: 'Failed to join group: ' + e.message });
+                }
             }
 
-            const participants = groupInfo.participants || [];
+            // If not in group and didn't request join, try getInviteInfo (limited preview)
+            if (!chat && !joinIfNeeded) {
+                try {
+                    const groupInfo = await client.getInviteInfo(inviteCode);
+                    if (groupInfo) {
+                        const participants = groupInfo.participants || [];
+                        const contacts = participants.map(p => {
+                            const phone = p.id ? (p.id.user || p.id._serialized?.split('@')[0]) : null;
+                            return { phone, name: null, isAdmin: p.isAdmin || p.isSuperAdmin || false, source: 'group_link' };
+                        }).filter(c => c.phone && c.phone.length >= 9);
+
+                        const totalSize = groupInfo.size || groupInfo.participants?.length || contacts.length;
+                        // If we got fewer than the actual group size, offer to join
+                        return socket.emit('group_contacts', {
+                            groupId: inviteCode,
+                            groupName: groupInfo.subject || 'Group',
+                            contacts,
+                            total: contacts.length,
+                            actualSize: totalSize,
+                            partial: contacts.length < totalSize,
+                            inviteCode
+                        });
+                    }
+                } catch (e) {}
+                return socket.emit('group_contacts', { error: 'Could not preview group. Click "Join & Extract" to join the group and get all contacts.' });
+            }
+
+            if (!chat) {
+                return socket.emit('group_contacts', { error: 'Could not access group' });
+            }
+
+            // Full extraction from joined group
+            groupName = chat.name || 'Group';
+            const participants = chat.participants || [];
             const contacts = participants.map(p => {
-                const phone = p.id ? (p.id.user || p.id._serialized?.split('@')[0]) : null;
-                return {
-                    phone,
-                    name: null,
-                    isAdmin: p.isAdmin || p.isSuperAdmin || false,
-                    source: 'group_link'
-                };
+                const phone = p.id.user;
+                return { phone, name: null, isAdmin: p.isAdmin || p.isSuperAdmin || false, source: 'group_link' };
             }).filter(c => c.phone && c.phone.length >= 9);
 
-            // Try to get display names
+            // Get display names (limit to 50 to avoid slowness)
             for (let i = 0; i < Math.min(contacts.length, 50); i++) {
                 try {
                     const contact = await client.getContactById(contacts[i].phone + '@c.us');
@@ -440,13 +490,14 @@ io.on('connection', (socket) => {
             }
 
             socket.emit('group_contacts', {
-                groupId: groupInfo.id?._serialized || inviteCode,
-                groupName: groupInfo.subject || 'Group via Invite Link',
+                groupId: chat.id._serialized,
+                groupName,
                 contacts,
-                total: contacts.length
+                total: contacts.length,
+                partial: false
             });
         } catch (err) {
-            socket.emit('group_contacts', { error: 'Failed: ' + (err.message || 'Could not access group. Link may be invalid or you may need to join first.') });
+            socket.emit('group_contacts', { error: 'Failed: ' + (err.message || 'Unknown error') });
         }
     });
 });
